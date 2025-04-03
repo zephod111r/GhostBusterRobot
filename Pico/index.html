@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot Control</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #222;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            height: 100vh;
+        }
+        .control-container {
+            position: absolute;
+            bottom: 20px;
+        }
+        #movement-circle {
+            left: 20px;
+            width: 300px;
+            height: 300px;
+            background: rgba(0, 150, 255, 0.3);
+            border-radius: 50%;
+            position: fixed;
+        }
+        #rotation-doughnut {
+            right: 20px;
+            width: 250px;
+            height: 250px;
+            background: radial-gradient(circle, transparent 40%, rgba(255, 100, 100, 0.3) 41%);
+            border-radius: 50%;
+            position: fixed;
+        }
+        #stick {
+            width: 20px;
+            height: 20px;
+            background: #fff;
+            border-radius: 50%;
+            position: absolute;
+            transform: translate(-50%, -50%);
+        }
+        #stop-button {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 100px;
+            height: 50px;
+            background: red;
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+        #stop-button:hover {
+            background: darkred;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Stop Button -->
+    <button id="stop-button">STOP</button>
+
+    <!-- Movement Control -->
+    <div id="movement-circle" class="control-container">
+        <div id="stick"></div>
+    </div>
+
+    <!-- Rotation Control -->
+    <div id="rotation-doughnut" class="control-container"></div>
+
+    <script>
+        let quaternion = { w: 1, x: 0, y: 0, z: 0 };
+        let lastSendTime = 0;
+        const sendInterval = 40; // Update frequency in ms (25Hz)
+        let requestId = null; // Holds the requestAnimationFrame ID
+
+        function sendQuaternion() {
+            fetch('/api/motors', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(quaternion)
+            });
+        }
+
+        function updatePosition(event) {
+            const rect = document.getElementById('movement-circle').getBoundingClientRect();
+            const cx = rect.width / 2, cy = rect.height / 2;
+            const x = (event.clientX || event.touches[0].clientX) - rect.left - cx;
+            const z = (event.clientY || event.touches[0].clientY) - rect.top - cy;
+            const distance = Math.sqrt(x * x + z * z);
+
+            if (distance <= cx) {
+                const newX = x / cx;
+                const newZ = -z / cy;
+
+                // Apply logarithmic scaling
+                const logScale = (value) => Math.sign(value) * Math.log1p(Math.abs(value));
+
+                quaternion.x = logScale(newX);
+                quaternion.z = logScale(newZ);
+
+                // Update stick position
+                const stick = document.getElementById('stick');
+                stick.style.left = `${cx + x}px`;
+                stick.style.top = `${cy + z}px`;
+            }
+        }
+
+        function stopRobot() {
+            if (requestId) {
+                cancelAnimationFrame(requestId); // Cancel any scheduled updates
+            }
+            quaternion = { w: 1, x: 0, y: 0, z: 0 };
+            sendQuaternion(); // Immediately send stop command
+
+            // Center the stick
+            const stick = document.getElementById('stick');
+            const rect = document.getElementById('movement-circle').getBoundingClientRect();
+            const cx = rect.width / 2, cy = rect.height / 2;
+            stick.style.left = `${cx}px`;
+            stick.style.top = `${cy}px`;
+        }
+
+        function loop() {
+            const now = performance.now();
+            if (now - lastSendTime >= sendInterval) {
+                lastSendTime = now;
+                sendQuaternion();
+            }
+            requestId = requestAnimationFrame(loop);
+        }
+
+        document.getElementById("movement-circle").addEventListener("mousemove", updatePosition);
+        document.getElementById("movement-circle").addEventListener("touchmove", updatePosition);
+        document.getElementById("stop-button").addEventListener("click", stopRobot);
+
+        requestId = requestAnimationFrame(loop);
+
+    </script>
+
+</body>
+</html>
